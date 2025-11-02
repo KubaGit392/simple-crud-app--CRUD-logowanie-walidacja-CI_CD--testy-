@@ -21,17 +21,20 @@ Prosty projekt end-to-end spełniający kryteria zaliczeniowe: własna encja z m
 
 1. Zainstaluj zależności:
 
+```bash
 npm install
+```
+3. Start w trybie developerskim (z nodemon):
 
-2. Start w trybie developerskim (z nodemon):
-
-bash  
+```bash  
 npm run dev  
+```
 
 3. Start produkcyjny:
 
-bash  
+```bash  
 npm start  
+```
 
 4. Otwórz aplikację:  
 * UI: [http://localhost:3000](http://localhost:3000)  
@@ -42,28 +45,30 @@ npm start
 
 ### **macOS/Linux:**
 
-bash  
-Copy  
+```bash  
 PORT=8000 npm start  
+```
 
 ### **Windows CMD:**
 
-bat  
+```bat  
 set PORT=8000 && npm start  
+```
 
 ### **Windows PowerShell:**
 
-powershell  
+```powershell  
 $env:PORT=8000; npm start  
+```
 
 ## **Jak uruchomić w środowisku zewnętrznym (lab/hosting)**
 
 Aplikacja nasłuchuje na `0.0.0.0`, więc jest dostępna z sieci zewnętrznej (po otwarciu portu).  
  Ustaw zmienną `PORT` zgodnie z platformą i uruchom:
 
-bash  
-Copy  
+```bash
 npm start  
+```
 
 Wejdź na:
 
