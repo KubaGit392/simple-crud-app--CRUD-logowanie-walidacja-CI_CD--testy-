@@ -3,14 +3,19 @@ name: CI/CD Pipeline
 on:
   push:
     branches: [ "main" ]
+  workflow_dispatch:
 
 concurrency:
   group: prod-deploy
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   build_and_test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -34,18 +39,49 @@ jobs:
   deploy_prod:
     runs-on: ubuntu-latest
     needs: build_and_test
+    env:
+      RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+    outputs:
+      should_run: ${{ steps.validate.outputs.run }}
     steps:
+      - name: Decide whether to deploy (has hook?)
+        id: validate
+        run: |
+          if [ -n "$RENDER_DEPLOY_HOOK" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No RENDER_DEPLOY_HOOK secret set; skipping deploy."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Trigger Render deploy
-        run: curl -fsSL -X POST "https://api.render.com/deploy/srv-d43ki80dl3ps73a17olg?key=38aujD83LZw"
+        if: ${{ steps.validate.outputs.run == 'true' }}
+        run: curl -fsS -X POST "$RENDER_DEPLOY_HOOK"
 
   smoke_test:
     runs-on: ubuntu-latest
     needs: deploy_prod
+    if: ${{ needs.deploy_prod.outputs.should_run == 'true' }}
     steps:
+      - name: Validate health URL
+        id: validate_health
+        env:
+          HEALTHCHECK_URL: ${{ secrets.HEALTHCHECK_URL }}
+        run: |
+          if [ -z "$HEALTHCHECK_URL" ]; then
+            echo "No HEALTHCHECK_URL secret set; skipping smoke test."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Wait for app to be healthy
+        if: ${{ steps.validate_health.outputs.run == 'true' }}
+        env:
+          HEALTHCHECK_URL: ${{ secrets.HEALTHCHECK_URL }}
         run: |
           for i in {1..30}; do
-            if curl -fsS https://simple-crud-app-crud-logowanie-walidacja.onrender.com/health > /dev/null; then
+            if curl -fsS "$HEALTHCHECK_URL" > /dev/null; then
               echo "Healthy!"
               exit 0
             fi
