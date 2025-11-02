@@ -4,23 +4,32 @@ const path = require('path');
 const Database = require('better-sqlite3');
 
 const isTest = process.env.NODE_ENV === 'test';
-const DB_FILE = path.join(__dirname, isTest ? 'tasks.test.db' : 'tasks.db');
 
-// W trybie testowym startuj zawsze od czystej bazy
-if (isTest && fs.existsSync(DB_FILE)) {
-  try { fs.unlinkSync(DB_FILE); } catch {}
+// 1) Priorytet ścieżki bazy:
+//    - DB_FILE z env (może być ':memory:')
+//    - w testach fallback na ':memory:'
+//    - w innych środowiskach: plik 'tasks.db' obok tego modułu
+const DEFAULT_FILE = path.join(__dirname, 'tasks.db');
+const envDbFile = process.env.DB_FILE; // np. ":memory:"
+const dbPath = envDbFile || (isTest ? ':memory:' : DEFAULT_FILE);
+
+// 2) W testach, tylko jeśli używamy pliku (nie ':memory:'), startuj od czystej bazy
+if (isTest && dbPath !== ':memory:' && fs.existsSync(dbPath)) {
+  try { fs.unlinkSync(dbPath); } catch {}
 }
 
-const db = new Database(DB_FILE);
+const db = new Database(dbPath);
 
 // MIGRACJE
 function runMigrations() {
   const migrations = [
     '001_create_tasks.sql',
-    '002_create_users.sql'
+    '002_create_users.sql',
   ];
-  migrations.forEach(file => {
-    const sqlPath = path.join(__dirname, 'migrations', file);
+  const migrationsDir = path.join(__dirname, 'migrations');
+
+  migrations.forEach((file) => {
+    const sqlPath = path.join(migrationsDir, file);
     if (fs.existsSync(sqlPath)) {
       const sql = fs.readFileSync(sqlPath, 'utf8');
       db.exec(sql);
@@ -59,11 +68,22 @@ module.exports = {
   listTasks: () => listTasksStmt.all(),
   getTask: (id) => getTaskStmt.get(id),
   createTask: (t) => {
-    const info = createTaskStmt.run(t.title, t.due_date, t.priority, t.description ?? null);
+    const info = createTaskStmt.run(
+      t.title,
+      t.due_date,
+      t.priority,
+      t.description ?? null
+    );
     return getTaskStmt.get(info.lastInsertRowid);
   },
   updateTask: (id, t) => {
-    const info = updateTaskStmt.run(t.title, t.due_date, t.priority, t.description ?? null, id);
+    const info = updateTaskStmt.run(
+      t.title,
+      t.due_date,
+      t.priority,
+      t.description ?? null,
+      id
+    );
     return info.changes > 0 ? getTaskStmt.get(id) : null;
   },
   deleteTask: (id) => deleteTaskStmt.run(id).changes > 0,

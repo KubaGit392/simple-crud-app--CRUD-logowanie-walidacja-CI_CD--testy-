@@ -26,7 +26,10 @@ jobs:
         run: npm ci
 
       - name: Run tests
-        run: npm test
+        run: npm test -- --runInBand
+        env:
+          NODE_ENV: test
+          DB_FILE: ":memory:"
 
   deploy_prod:
     runs-on: ubuntu-latest
