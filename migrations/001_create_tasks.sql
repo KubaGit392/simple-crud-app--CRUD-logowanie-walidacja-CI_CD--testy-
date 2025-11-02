@@ -1,0 +1,7 @@
+CREATE TABLE IF NOT EXISTS tasks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  due_date TEXT NOT NULL, -- format YYYY-MM-DD
+  priority INTEGER NOT NULL CHECK (priority BETWEEN 1 AND 5),
+  description TEXT
+);

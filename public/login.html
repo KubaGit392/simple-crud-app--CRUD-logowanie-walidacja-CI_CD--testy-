@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Logowanie - Tasks CRUD</title>
+  <link rel="stylesheet" href="stylesheet.css">
+  <style>
+    .auth-container {
+      max-width: 400px;
+      margin: 60px auto;
+      background: var(--card);
+      padding: 40px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+    }
+    .auth-container h1 { text-align: center; margin-bottom: 30px; }
+    .form-group { margin-bottom: 20px; }
+    .form-group label { display: block; margin-bottom: 8px; color: var(--muted); }
+    .form-group input {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--card);
+      color: var(--text);
+    }
+    .error { color: #ef4444; margin-top: 10px; font-size: 14px; }
+    .link { text-align: center; margin-top: 20px; }
+    .link a { color: var(--primary); text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="auth-container">
+    <h1>Logowanie</h1>
+    <form id="loginForm">
+      <div class="form-group">
+        <label>Nazwa użytkownika</label>
+        <input type="text" id="username" required>
+      </div>
+      <div class="form-group">
+        <label>Hasło</label>
+        <input type="password" id="password" required>
+      </div>
+      <button type="submit" style="width: 100%;">Zaloguj się</button>
+      <div class="error" id="error"></div>
+    </form>
+    <div class="link">
+      <a href="/register.html">Nie masz konta? Zarejestruj się</a><br>
+      <a href="/home.html">Powrót do strony głównej</a>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('loginForm').onsubmit = async (e) => {
+      e.preventDefault();
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      
+      try {
+        const res = await fetch('/api/users/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        
+        const data = await res.json();
+        
+        if (!res.ok) {
+          document.getElementById('error').textContent = data.message;
+          return;
+        }
+        
+        localStorage.setItem('token', data.token);
+        window.location.href = '/index.html';
+      } catch (err) {
+        document.getElementById('error').textContent = 'Błąd połączenia';
+      }
+    };
+  </script>
+</body>
+</html>

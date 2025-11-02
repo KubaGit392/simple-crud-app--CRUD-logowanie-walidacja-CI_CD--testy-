@@ -1,0 +1,48 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build_and_test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+  deploy_prod:
+    runs-on: ubuntu-latest
+    needs: build_and_test
+    if: success()
+    steps:
+      - name: Deploy to Render
+        uses: appleboy/ssh-action@v0.1.8
+        with:
+          host: ${{ secrets.RENDER_HOST }}
+          username: ${{ secrets.RENDER_USER }}
+          key: ${{ secrets.RENDER_SSH_KEY }}
+          script: |
+            cd /var/www/crud-app
+            git pull origin main
+            npm ci
+            npm run build || true
+            pm2 restart all
+
+  smoke_test:
+    runs-on: ubuntu-latest
+    needs: deploy_prod
+    steps:
+      - name: Test /health endpoint
+        run: curl -f https://tasks-crud-app.onrender.com/health

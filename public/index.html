@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Simple CRUD App (HTML/JS + Express + SQLite)</title>
+    <link rel="stylesheet" href="stylesheet.css">
+  </head>
+  <body>
+    <h1>Tasks CRUD</h1>
+    <!-- DODAJ: Info o użytkowniku i wylogowanie -->
+    <div style="text-align: right; margin: -40px 0 20px 0;">
+      <span id="userInfo" style="color: var(--muted); margin-right: 10px;"></span>
+      <button onclick="logout()" style="padding: 8px 16px;">Wyloguj</button>
+    </div>
+    <p class="subtitle"> Prosty CRUD na Express + SQLite. Dodawaj, edytuj i usuwaj zadania. </p>
+    <form id="taskForm">
+      <input type="hidden" id="taskId" />
+      <div>
+        <label>Tytuł: </label>
+        <input type="text" id="title" required minlength="3" />
+      </div>
+      <div>
+        <label>Data (YYYY-MM-DD): </label>
+        <input type="date" id="due_date" required />
+      </div>
+      <div>
+        <label>Priorytet (1-5):</label>
+        <input type="number" id="priority" required min="1" max="5" />
+      </div>
+      <div style="grid-column: 1 / -1;">
+        <label>Opis:</label>
+        <textarea id="description" rows="3"></textarea>
+      </div>
+      <div style="grid-column: 1 / -1;">
+        <button type="submit">Zapisz</button>
+        <button type="button" id="cancelEdit" style="display: none;">Anuluj edycję</button>
+      </div>
+    </form>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Tytuł</th>
+          <th>Data</th>
+          <th>Priorytet</th>
+          <th>Opis</th>
+          <th>Akcje</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <p class="footer-note"> Tip: kliknij „Edytuj", aby wczytać rekord do formularza. </p>
+    <script>
+      const API = '/api/tasks';
+      const tbody = document.getElementById('tbody');
+      const taskForm = document.getElementById('taskForm');
+      const cancelEditBtn = document.getElementById('cancelEdit');
+      let editingId = null;
+
+      // ==== AUTORYZACJA ====
+      function getToken() {
+        return localStorage.getItem('token');
+      }
+
+      async function checkAuth() {
+        const token = getToken();
+        if (!token) {
+          window.location.href = '/home.html';
+          return;
+        }
+
+        try {
+          const res = await fetch('/api/users/me', {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          });
+
+          if (!res.ok) {
+            localStorage.removeItem('token');
+            window.location.href = '/home.html';
+            return;
+          }
+
+          const user = await res.json();
+          document.getElementById('userInfo').textContent = `Zalogowany: ${user.username} (${user.rola})`;
+        } catch (err) {
+          console.error('Błąd autoryzacji:', err);
+          localStorage.removeItem('token');
+          window.location.href = '/home.html';
+        }
+      }
+
+      function logout() {
+        const token = getToken();
+        fetch('/api/users/logout', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }).finally(() => {
+          localStorage.removeItem('token');
+          window.location.href = '/home.html';
+        });
+      }
+
+      // Uruchom sprawdzanie autoryzacji
+      checkAuth();
+
+      // ---- FUNKCJE POMOCNICZE ----
+      function priorityBadge(p) {
+        const map = {
+          1: { cls: 'prio-1', label: 'Niski' },
+          2: { cls: 'prio-2', label: 'Podwyższony' },
+          3: { cls: 'prio-3', label: 'Średni' },
+          4: { cls: 'prio-4', label: 'Wysoki' },
+          5: { cls: 'prio-5', label: 'Krytyczny' }
+        };
+        const m = map[p] || map[3];
+        return `<span class="badge ${m.cls}" title="Priorytet ${p}">${p} ${m.label}</span>`;
+      }
+
+      function rowHTML(t) {
+        const safeTask = JSON.stringify(t).replaceAll('"', '&quot;');
+        return `
+          <tr data-id="${t.id}" class="${t.id === editingId ? 'is-editing' : ''}">
+            <td>${t.id}</td>
+            <td>${t.title}</td>
+            <td>${t.due_date}</td>
+            <td>${priorityBadge(t.priority)}</td>
+            <td>${t.description || ''}</td>
+            <td class="actions">
+              <button id="edit-${t.id}" onclick='editTask(${safeTask})'>Edytuj</button>
+              <button onclick="delTask(${t.id})">Usuń</button>
+            </td>
+          </tr>
+        `;
+      }
+
+      function applyEditingState() {
+        document.querySelectorAll('button[id^="edit"]').forEach(btn => {
+          btn.disabled = false;
+          btn.classList.remove('btn-disabled');
+          btn.textContent = 'Edytuj';
+        });
+
+        document.querySelectorAll('tr.is-editing').forEach(tr => tr.classList.remove('is-editing'));
+
+        if (editingId != null) {
+          const btn = document.getElementById(`edit-${editingId}`);
+          if (btn) {
+            btn.disabled = true;
+            btn.classList.add('btn-disabled');
+            btn.textContent = 'Edytujesz.';
+          }
+          const row = document.querySelector(`tr[data-id="${editingId}"]`);
+          if (row) row.classList.add('is-editing');
+        }
+      }
+
+      // ==== LISTA ZADAŃ ====
+      async function loadTasks() {
+        const token = getToken();
+        try {
+          const res = await fetch(API, {
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (!res.ok) {
+            if (res.status === 401) {
+              alert('Sesja wygasła. Zaloguj się ponownie.');
+              logout();
+              return;
+            }
+            throw new Error('Błąd pobierania zadań');
+          }
+          const tasks = await res.json();
+          tbody.innerHTML = tasks.map(rowHTML).join('');
+          applyEditingState();
+        } catch (err) {
+          console.error('Błąd:', err);
+          alert('Nie udało się pobrać zadań');
+        }
+      }
+
+      // ==== POBIERZ 1 ZADANIE ====
+      async function getTaskById(id) {
+        const token = getToken();
+        try {
+          const res = await fetch(`${API}/${id}`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          if (!res.ok) {
+            if (res.status === 401) { alert('Sesja wygasła.'); logout(); return null; }
+            if (res.status === 404) { alert('Zadanie nie znalezione'); return null; }
+            throw new Error('Błąd pobierania zadania');
+          }
+          return await res.json();
+        } catch (err) {
+          console.error('Błąd:', err);
+          alert('Nie udało się pobrać zadania');
+          return null;
+        }
+      }
+
+      // ==== EDYCJA (wczytanie do formularza) ====
+      window.editTask = (t) => {
+        editingId = t.id;
+        document.getElementById('taskId').value = t.id;
+        document.getElementById('title').value = t.title;
+        document.getElementById('due_date').value = t.due_date;
+        document.getElementById('priority').value = t.priority;
+        document.getElementById('description').value = t.description || '';
+        cancelEditBtn.style.display = 'inline-block';
+        applyEditingState();
+      };
+
+      // ==== ANULUJ EDYCJĘ ====
+      cancelEditBtn.onclick = () => {
+        taskForm.reset();
+        document.getElementById('taskId').value = '';
+        cancelEditBtn.style.display = 'none';
+        editingId = null;
+        applyEditingState();
+      };
+
+      // ==== ZAPIS (POST/PUT) ====
+      async function save(payload, id) {
+        const token = getToken();
+        try {
+          const res = await fetch(id ? `${API}/${id}` : API, {
+            method: id ? 'PUT' : 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(payload)
+          });
+          if (!res.ok) {
+            if (res.status === 401) {
+              alert('Sesja wygasła. Zaloguj się ponownie.');
+              logout();
+              return;
+            }
+            const err = await res.json().catch(() => ({}));
+            const msg = (err.fieldErrors?.map(e => `${e.field}: ${e.message}`).join(', ')) || err.message || res.statusText;
+            alert('Błąd: ' + msg);
+            return;
+          }
+          const savedTask = await res.json();
+          console.log('Zapisano:', savedTask);
+        } catch (err) {
+          console.error('Błąd:', err);
+          alert('Nie udało się zapisać zadania');
+        }
+      }
+
+      // ==== USUŃ ====
+      window.delTask = async (id) => {
+        if (!confirm('Czy na pewno chcesz usunąć zadanie?')) return;
+        const token = getToken();
+        try {
+          const res = await fetch(`${API}/${id}`, {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          if (res.status === 401) {
+            alert('Sesja wygasła. Zaloguj się ponownie.');
+            logout();
+            return;
+          }
+          if (res.status !== 204) {
+            alert('Błąd usuwania!');
+            return;
+          }
+          console.log('Usunięto zadanie:', id);
+          await loadTasks();
+        } catch (err) {
+          console.error('Błąd:', err);
+          alert('Nie udało się usunąć zadania');
+        }
+      };
+
+      // ==== SUBMIT FORMULARZA ====
+      taskForm.onsubmit = async (e) => {
+        e.preventDefault();
+        const payload = {
+          title: document.getElementById('title').value.trim(),
+          due_date: document.getElementById('due_date').value,
+          priority: parseInt(document.getElementById('priority').value, 10),
+          description: document.getElementById('description').value.trim() || null
+        };
+        const id = document.getElementById('taskId').value || null;
+        await save(payload, id);
+        // Reset i odświeżenie
+        cancelEditBtn.click();
+        editingId = null;
+        await loadTasks();
+      };
+
+      // Start
+      loadTasks();
+      </script>
+  </body>
+</html>
