@@ -156,7 +156,9 @@ router.delete('/:id', authMiddleware, (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) {
       return res.status(400).json(errorResponse(400, [{
-        field: 'id', code: 'INVALID_FORMAT', message: 'ID musi być liczbą całkowitą większą od 0'
+        field: 'id', 
+        code: 'INVALID_FORMAT', 
+        message: 'ID musi być liczbą całkowitą większą od 0'
       }]));
     }
 
